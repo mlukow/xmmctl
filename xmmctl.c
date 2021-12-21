@@ -847,119 +847,126 @@ timeout(int _sig)
 	timed_out = true;
 }
 
- /**
-    * Create socket function
-    */
-    int create_socket() {
+/**
+ * Create socket function
+ */
+int
+create_socket()
+{
+	int sockfd = 0;
 
-      int sockfd = 0;
+	sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+	if(sockfd == -1){
+		fprintf(stderr, "Could not get socket.\n");
+		return -1;
+	}
 
-      sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-      if(sockfd == -1){
-        fprintf(stderr, "Could not get socket.\n");
-        return -1;
-      }
+	return sockfd;
 
-      return sockfd;
+}
 
-    }
+/**
+ * Generic ioctrlcall to reduce code size
+ */
+int
+generic_ioctrlcall(int sockfd, u_long *flags, struct ifreq *ifr)
+{
+	if (ioctl(sockfd, (long unsigned int)flags, &ifr) < 0) {
+		fprintf(stderr, "ioctl: %s\n", (char *)flags);
+		return -1;
+	}
 
-    /**
-    * Generic ioctrlcall to reduce code size
-    */
-    int generic_ioctrlcall(int sockfd, u_long *flags, struct ifreq *ifr) {
+	return 1;
+}
 
-      if (ioctl(sockfd, (long unsigned int)flags, &ifr) < 0) {
-        fprintf(stderr, "ioctl: %s\n", (char *)flags);
-        return -1;
-      }
-      return 1;
-    }
+/**
+ * Set route with metric 100
+ */
+int
+set_route(int sockfd, const char *gateway_addr, struct sockaddr_in *addr)
+{
+	struct rtentry route;
+	memset(&route, 0, sizeof(route));
+	addr = (struct sockaddr_in*) &route.rt_gateway;
+	addr->sin_family = AF_INET;
+	addr->sin_addr.s_addr = inet_addr(gateway_addr);
+	addr = (struct sockaddr_in*) &route.rt_dst;
+	addr->sin_family = AF_INET;
+	addr->sin_addr.s_addr = inet_addr("0.0.0.0");
+	addr = (struct sockaddr_in*) &route.rt_genmask;
+	addr->sin_family = AF_INET;
+	addr->sin_addr.s_addr = inet_addr("0.0.0.0");
+	route.rt_flags = RTF_UP | RTF_GATEWAY;
+	route.rt_metric = 100;
 
-    /**
-    * Set route with metric 100
-    */
-    int set_route(int sockfd, char *gateway_addr,  struct sockaddr_in *addr) {
-      struct rtentry route;
-      memset(&route, 0, sizeof(route));
-      addr = (struct sockaddr_in*) &route.rt_gateway;
-      addr->sin_family = AF_INET;
-      addr->sin_addr.s_addr = inet_addr(gateway_addr);
-      addr = (struct sockaddr_in*) &route.rt_dst;
-      addr->sin_family = AF_INET;
-      addr->sin_addr.s_addr = inet_addr("0.0.0.0");
-      addr = (struct sockaddr_in*) &route.rt_genmask;
-      addr->sin_family = AF_INET;
-      addr->sin_addr.s_addr = inet_addr("0.0.0.0");
-      route.rt_flags = RTF_UP | RTF_GATEWAY;
-      route.rt_metric = 100;
+	if (ioctl(sockfd, SIOCADDRT, &route) < 0) {
+		printf("ioctl in set_route\n");
+		return -1;
+	}
 
-	  if (ioctl(sockfd, SIOCADDRT, &route) < 0) {
-		  printf("ioctl in set_route\n");
-		  return -1;
-	  }
+	return 1;
+}
 
-	  return 1;
-    }
+/**
+ * Set ip function
+ */
+int
+set_ip(const char *iface_name, const char *ip_addr, const char *gateway_addr)
+{
+	if(!iface_name)
+		return -1;
 
-    /**
-    * Set ip function
-    */
-    int set_ip(char *iface_name, char *ip_addr, char *gateway_addr)
-    {
-      if(!iface_name)
-        return -1;
-      struct ifreq ifr;
-      struct sockaddr_in sin;
-      int sockfd = create_socket();
+	struct ifreq ifr;
+	struct sockaddr_in sin;
+	int sockfd = create_socket();
 
-      sin.sin_family = AF_INET;
+	sin.sin_family = AF_INET;
 
-      // Convert IP from numbers and dots to binary notation
-      inet_aton(ip_addr,(struct in_addr *)&sin.sin_addr.s_addr);
+	// Convert IP from numbers and dots to binary notation
+	inet_aton(ip_addr,(struct in_addr *)&sin.sin_addr.s_addr);
 
-      /* get interface name */
-      strncpy(ifr.ifr_name, iface_name, IFNAMSIZ);
+	/* get interface name */
+	strncpy(ifr.ifr_name, iface_name, IFNAMSIZ);
 
-      /* Read interface flags */
-	  if (ioctl(sockfd, SIOCGIFFLAGS, &ifr) < 0) {
-		  printf("ioctl 1\n");
-		  return -1;
-	  }
-      //generic_ioctrlcall(sockfd, (u_long *)"SIOCGIFFLAGS", &ifr);
-      /*
-      * Expected in <net/if.h> according to
-      * "UNIX Network Programming".
-      */
-      #ifdef ifr_flags
-      # define IRFFLAGS       ifr_flags
-      #else   /* Present on kFreeBSD */
-      # define IRFFLAGS       ifr_flagshigh
-      #endif
-      // If interface is down, bring it up
-      if (ifr.IRFFLAGS | ~(IFF_UP)) {
-        ifr.IRFFLAGS |= IFF_UP;
-        //generic_ioctrlcall(sockfd, (u_long *)"SIOCSIFFLAGS", &ifr);
+	/* Read interface flags */
+	if (ioctl(sockfd, SIOCGIFFLAGS, &ifr) < 0) {
+		printf("ioctl 1\n");
+		return -1;
+	}
+	//generic_ioctrlcall(sockfd, (u_long *)"SIOCGIFFLAGS", &ifr);
+	/*
+	 * Expected in <net/if.h> according to
+	 * "UNIX Network Programming".
+	 */
+#ifdef ifr_flags
+# define IRFFLAGS       ifr_flags
+#else   /* Present on kFreeBSD */
+# define IRFFLAGS       ifr_flagshigh
+#endif
+	// If interface is down, bring it up
+	if (ifr.IRFFLAGS | ~(IFF_UP)) {
+		ifr.IRFFLAGS |= IFF_UP;
+		//generic_ioctrlcall(sockfd, (u_long *)"SIOCSIFFLAGS", &ifr);
 		if (ioctl(sockfd, SIOCGIFFLAGS, &ifr) < 0) {
 			printf("ioctl 2\n");
 			return -1;
 		}
-      }
-      // Set route
-      set_route(sockfd, gateway_addr    ,  &sin);
+	}
+	// Set route
+	set_route(sockfd, gateway_addr    ,  &sin);
 
-      memcpy(&ifr.ifr_addr, &sin, sizeof(struct sockaddr));
+	memcpy(&ifr.ifr_addr, &sin, sizeof(struct sockaddr));
 
-      // Set interface address
-      if (ioctl(sockfd, SIOCSIFADDR, &ifr) < 0) {
-        fprintf(stderr, "Cannot set IP address. ");
-        perror(ifr.ifr_name);
-        return -1;
-      }
-      #undef IRFFLAGS
+	// Set interface address
+	if (ioctl(sockfd, SIOCSIFADDR, &ifr) < 0) {
+		fprintf(stderr, "Cannot set IP address. ");
+		perror(ifr.ifr_name);
+		return -1;
+	}
+#undef IRFFLAGS
 
-      return 0;
-    }
+	return 0;
+}
 
 void
 usage(const char* progname)
@@ -968,12 +975,6 @@ usage(const char* progname)
 	    "usage: %s -a <apn> [-p <pin>] <iface>\n",
 	     progname);
 	exit(1);
-}
-
-int
-main(int argc, char **argv)
-{
-	return set_ip("ens33", "192.168.45.67", "192.168.45.67");
 }
 
 /*
@@ -988,10 +989,10 @@ main(int argc, char **argv)
  */
 
 int
-main2(int argc, char *argv[])
+main(int argc, char *argv[])
 {
 	int ret, ch, i;
-	const char *apn = NULL, *pin = NULL, *ifname = NULL;
+	const char *apn = NULL, *pin = NULL, *ifname = NULL, *retp;
 	struct in_addr *ip_addrs = NULL;
 	const struct in_addr *addr;
 	struct dns_addr *dns_servers = NULL;
@@ -1115,11 +1116,12 @@ main2(int argc, char *argv[])
 		return 1;
 	}
 
-	/*
 	retp = inet_ntop(AF_INET, addr, buf, sizeof(buf));
 	if (retp != NULL) {
 		syslog(LOG_DEBUG, "got ip addr %s", retp);
 
+		set_ip(ifname, retp, retp);
+		/*
 		retp_len = strlen(retp);
 		char *cmd = malloc(21 + 2 * retp_len + strlen(ifname));
 		sprintf(cmd, "/sbin/ifconfig %s %s/32 %s", ifname, buf, buf);
@@ -1138,8 +1140,10 @@ main2(int argc, char *argv[])
 			syslog(LOG_ERR, "route failed");
 			return 1;
 		}
+		*/
 	}
 
+	/*
 	if (dns_count > 0) {
 		resolv_file = fopen("/etc/resolv.conf", "w");
 		fprintf(resolv_file, "# Generated by xmmctl\n");
