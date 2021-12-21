@@ -1026,12 +1026,12 @@ main(int argc, char *argv[])
 		return 1;
 	}
 
-	ret = sscanf(ifname, "xmm%u", &iface_num);
+	ret = sscanf(ifname, "wwan%u", &iface_num);
 	if (ret != 1) {
 		err(1, "invalid interface name");
 	}
 
-	ret = snprintf(buf, sizeof(buf), "/dev/xmmc%u.1", iface_num);
+	ret = snprintf(buf, sizeof(buf), "/dev/xmm%u/rpc", iface_num);
 	if (ret < 0 || ret >= sizeof(buf))
 		errx(1, "failed to open rpc interface");
 
