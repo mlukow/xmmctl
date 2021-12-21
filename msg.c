@@ -625,4 +625,5 @@ const char * call_id_name(enum xmm_7360_call_ids id)
 	make_case(RPCGetAPIParamChangedBitmap)
 	}
 #undef make_case
+	return NULL;
 }
